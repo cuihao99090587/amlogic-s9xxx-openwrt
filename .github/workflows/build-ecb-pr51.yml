@@ -57,19 +57,25 @@ jobs:
         run: |
           mkdir -p opt/download
           
-          # Download latest OpenWrt armsr rootfs from official releases
-          echo "Downloading OpenWrt armsr rootfs..."
-          ROOTFS_URL=$(curl -s "https://api.github.com/repos/openwrt/openwrt/releases/latest" | \
-            jq -r '.assets[] | select(.name | test("openwrt-armsr-armv8-generic-rootfs.tar.gz")) | .browser_download_url')
+          # 使用 ophub 提供的预编译 Lean OpenWrt rootfs (稳定可靠)
+          ROOTFS_URL="https://github.com/ophub/amlogic-s9xxx-openwrt/releases/download/OpenWrt_ledes_master_save_2026.03/openwrt-armsr-armv8-generic-rootfs.tar.gz"
           
-          if [ -z "$ROOTFS_URL" ]; then
-            echo "No rootfs found in latest release, trying alternate source..."
-            # Try coolsnowwolf/lede for Lean's OpenWrt
-            ROOTFS_URL="https://github.com/coolsnowwolf/lede/releases/download/latest/openwrt-armsr-armv8-generic-rootfs.tar.gz"
+          echo "Downloading OpenWrt rootfs from: $ROOTFS_URL"
+          curl -L --fail -o opt/download/openwrt-armsr-armv8-generic-rootfs.tar.gz "$ROOTFS_URL"
+          
+          # 验证下载
+          if [ ! -f opt/download/openwrt-armsr-armv8-generic-rootfs.tar.gz ]; then
+            echo "ERROR: Failed to download rootfs"
+            exit 1
           fi
           
-          echo "Downloading from: $ROOTFS_URL"
-          curl -L -o opt/download/openwrt-armsr-armv8-generic-rootfs.tar.gz "$ROOTFS_URL"
+          FILE_SIZE=$(stat -c%s opt/download/openwrt-armsr-armv8-generic-rootfs.tar.gz 2>/dev/null || stat -f%z opt/download/openwrt-armsr-armv8-generic-rootfs.tar.gz)
+          echo "Downloaded file size: $FILE_SIZE bytes"
+          
+          if [ "$FILE_SIZE" -lt 10000000 ]; then
+            echo "ERROR: File too small, download may have failed"
+            exit 1
+          fi
           
           ls -la opt/download/
           echo "status=success" >> ${GITHUB_OUTPUT}
