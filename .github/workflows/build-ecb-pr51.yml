@@ -1,33 +1,13 @@
-#==========================================================
-# Description: Build OpenWrt for Lenovo ECB-PR51
-# Custom workflow for RK3568 device
-#==========================================================
+#=====================================================================================
+# Build OpenWrt for Lenovo ECB-PR51 (RK3568)
+# https://github.com/ophub/flippy-openwrt-actions
+#=====================================================================================
 
 name: Build OpenWrt for ECB-PR51
 
 on:
   repository_dispatch:
   workflow_dispatch:
-    inputs:
-      openwrt_kernel:
-        description: "Select kernel version"
-        required: false
-        default: "6.1.y"
-        type: choice
-        options:
-          - 5.10.y
-          - 5.15.y
-          - 6.1.y
-          - 6.6.y
-      auto_kernel:
-        description: "Auto use the latest kernel"
-        required: false
-        default: true
-        type: boolean
-      openwrt_ip:
-        description: "Set OpenWrt default IP address"
-        required: false
-        default: "192.168.1.1"
 
 env:
   TZ: Asia/Shanghai
@@ -35,37 +15,25 @@ env:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    if: ${{ github.event.repository.owner.id == github.event.sender.id }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
-      - name: Initialize the build environment
-        id: init
-        env:
-          DEBIAN_FRONTEND: noninteractive
+      - name: Initialize environment
         run: |
-          docker rmi -f $(docker images -q) 2>/dev/null || true
-          [[ -n "${AGENT_TOOLSDIRECTORY}" ]] && sudo rm -rf "${AGENT_TOOLSDIRECTORY}"
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android 2>/dev/null
-          sudo swapoff -a
-          sudo rm -f /swapfile /mnt/swapfile
-          sudo -E apt-get -y update
-          sudo -E apt-get -y purge azure-cli ghc* zulu* llvm* firefox google* dotnet* powershell openjdk* mongodb* moby* || true
-          sudo -E apt-get -y install $(curl -fsSL https://ophub.org/ubuntu2404-make-openwrt-depends)
-          sudo -E systemctl daemon-reload
-          sudo -E apt-get -y autoremove --purge
-          sudo -E apt-get clean
-          sudo sed -i '/NVM_DIR/d;/skel/d' /root/{.bashrc,.profile}
-          sudo rm -rf ~/{.cargo,.dotnet,.rustup}
-          sudo -E timedatectl set-timezone "${TZ:-Etc/UTC}"
-          sudo -E ntpdate ntp.ubuntu.com 0.pool.ntp.org || true
-          sudo -E timedatectl set-ntp true
-          date -u
-          timedatectl status || true
-          echo "status=success" >> ${GITHUB_OUTPUT}
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install $(curl -fsSL https://is.gd/depends_ubuntu_2204)
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+          sudo timedatectl set-timezone "$TZ"
+          sudo mkdir -p /builder
+          sudo chown -R runner:runner /builder
+          df -h
 
-      - name: Create virtual disk for extended storage
+      - name: Create virtual disk
         run: |
           mnt_size=$(expr $(df -h /mnt | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - 1)
           root_size=$(expr $(df -h / | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - 4)
@@ -73,61 +41,60 @@ jobs:
           sudo truncate -s "${root_size}"G /root.img
           sudo losetup /dev/loop6 /mnt/mnt.img
           sudo losetup /dev/loop7 /root.img
-          sudo pvcreate /dev/loop6
-          sudo pvcreate /dev/loop7
+          sudo pvcreate /dev/loop6 /dev/loop7
           sudo vgcreate github /dev/loop6 /dev/loop7
           sudo lvcreate -n runner -l 100%FREE github
           sudo mkfs.xfs -f -i sparse=0 -b size=4096 /dev/github/runner
-          sudo mkdir -p /builder
           sudo mount /dev/github/runner /builder
           sudo chown -R runner:runner /builder
-          df -Th
-          echo "status=success" >> ${GITHUB_OUTPUT}
+          df -h
 
-      - name: Download OpenWrt rootfs file
+      - name: Download OpenWrt rootfs
         id: download
         working-directory: /builder
-        if: ${{ steps.init.outputs.status == 'success' && !cancelled() }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          armsr_tarfile_path="opt/download"
-          [[ -d "${armsr_tarfile_path}" ]] || mkdir -p ${armsr_tarfile_path}
-          sudo rm -rf /opt && sudo ln -sf /builder/opt /opt
-          ln -sf /builder/opt ${{ github.workspace }}/opt
-
-          ROOTFS_URL="https://github.com/ophub/amlogic-s9xxx-openwrt/releases/download/OpenWrt_lede_master_save_2026.03/openwrt-armsr-armv8-generic-rootfs.tar.gz"
+          mkdir -p opt/download
           
-          echo "Downloading rootfs from: ${ROOTFS_URL}"
-          curl -fsSL "${ROOTFS_URL}" -o "${armsr_tarfile_path}/openwrt-armsr-armv8-generic-rootfs.tar.gz"
+          # Download latest OpenWrt armsr rootfs from official releases
+          echo "Downloading OpenWrt armsr rootfs..."
+          ROOTFS_URL=$(curl -s "https://api.github.com/repos/openwrt/openwrt/releases/latest" | \
+            jq -r '.assets[] | select(.name | test("openwrt-armsr-armv8-generic-rootfs.tar.gz")) | .browser_download_url')
           
-          if [[ ! -f "${armsr_tarfile_path}/openwrt-armsr-armv8-generic-rootfs.tar.gz" ]]; then
-              echo "Error: Failed to download rootfs."
-              exit 1
+          if [ -z "$ROOTFS_URL" ]; then
+            echo "No rootfs found in latest release, trying alternate source..."
+            # Try coolsnowwolf/lede for Lean's OpenWrt
+            ROOTFS_URL="https://github.com/coolsnowwolf/lede/releases/download/latest/openwrt-armsr-armv8-generic-rootfs.tar.gz"
           fi
           
-          ls -la ${armsr_tarfile_path}/
+          echo "Downloading from: $ROOTFS_URL"
+          curl -L -o opt/download/openwrt-armsr-armv8-generic-rootfs.tar.gz "$ROOTFS_URL"
           
-          echo "build_tag=OpenWrt_ECB-PR51_$(date +"%Y.%m.%d")" >> ${GITHUB_ENV}
+          ls -la opt/download/
           echo "status=success" >> ${GITHUB_OUTPUT}
 
       - name: Package OpenWrt Firmware for ECB-PR51
+        id: package
+        if: steps.download.outputs.status == 'success'
         uses: ophub/flippy-openwrt-actions@main
-        if: ${{ steps.download.outputs.status == 'success' && !cancelled() }}
         env:
           OPENWRT_ARMSR: opt/download/*rootfs.tar.gz
-          PACKAGE_SOC: "diy"
-          SCRIPT_REPO_URL: "cuihao99090587/openwrt_packit"
-          SCRIPT_DIY: "mk_rk3568_ecb-pr51.sh"
-          KERNEL_REPO_URL: "ophub/kernel"
-          KERNEL_VERSION_NAME: ${{ inputs.openwrt_kernel }}
-          KERNEL_AUTO_LATEST: ${{ inputs.auto_kernel }}
-          OPENWRT_IP: ${{ inputs.openwrt_ip }}
-          WHOAMI: "ecb-pr51-builder"
+          PACKAGE_SOC: diy
+          SCRIPT_REPO_URL: cuihao99090587/openwrt_packit
+          SCRIPT_DIY: mk_rk3568_ecb-pr51.sh
+          SCRIPT_DIY_PATH: https://raw.githubusercontent.com/cuihao99090587/openwrt_packit/master/mk_rk3568_ecb-pr51.sh
+          KERNEL_REPO_URL: ophub/kernel
+          KERNEL_VERSION_NAME: 6.1.y
+          KERNEL_AUTO_LATEST: true
+          OPENWRT_IP: 192.168.1.1
+          WHOAMI: ecb-pr51-builder
 
-      - name: Upload OpenWrt Firmware to Release
-        uses: ncipollo/release-action@main
+      - name: Upload firmware to Release
         if: ${{ env.PACKAGED_STATUS == 'success' && !cancelled() }}
+        uses: ncipollo/release-action@main
         with:
-          tag: ${{ env.build_tag }}
+          tag: OpenWrt_ECB-PR51_${{ env.PACKAGED_OUTPUTDATE }}
           artifacts: ${{ env.PACKAGED_OUTPUTPATH }}/*
           allowUpdates: true
           removeArtifacts: false
@@ -135,20 +102,19 @@ jobs:
           makeLatest: true
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
-            ### OpenWrt for Lenovo ECB-PR51
-            - **Device**: Lenovo ECB-PR51 (RK3568)
-            - **RAM**: 8GB DDR4
-            - **Storage**: 32GB eMMC + SATA
-            - **Network**: 2x Gigabit Ethernet
-            - **WiFi/BT**: AP6256
+            ## OpenWrt for Lenovo ECB-PR51
+            
+            **Device:** Lenovo ECB-PR51 (RK3568, 8GB DDR4, 32GB eMMC, SATA, Dual Gigabit Ethernet, AP6256 WiFi/BT)
+            
+            **Kernel:** Flippy 6.1.y series
             
             ### Default Settings
-            - Default IP: `192.168.1.1`
-            - Default username: `root`
-            - Default password: `password`
+            - IP: 192.168.1.1
+            - Username: root
+            - Password: password
             
-            ### Install to EMMC
-            - Login to OpenWrt -> `System` -> `Amlogic Service` -> `Install OpenWrt`
+            ### Flash Instructions
+            1. Write the `.img` file to eMMC using rkdeveloptool or dd
+            2. Or write to a USB drive and boot from USB first
             
-            ### OpenWrt source code
-            - [coolsnowwolf/lede](https://github.com/coolsnowwolf/lede)
+            Built with [flippy-openwrt-actions](https://github.com/ophub/flippy-openwrt-actions)
