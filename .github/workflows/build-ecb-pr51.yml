@@ -46,43 +46,11 @@ jobs:
           sudo chown -R runner:runner /builder
           df -h
 
-      - name: Download OpenWrt rootfs
-        id: download
-        working-directory: /builder
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          mkdir -p opt/download
-          
-          # 使用 ophub 提供的预编译 Lean OpenWrt rootfs (稳定可靠)
-          ROOTFS_URL="https://github.com/ophub/amlogic-s9xxx-openwrt/releases/download/OpenWrt_lede_master_save_2026.03/openwrt-armsr-armv8-generic-rootfs.tar.gz"
-          
-          echo "Downloading OpenWrt rootfs from: $ROOTFS_URL"
-          curl -L --fail -o opt/download/openwrt-armsr-armv8-generic-rootfs.tar.gz "$ROOTFS_URL"
-          
-          # 验证下载
-          if [ ! -f opt/download/openwrt-armsr-armv8-generic-rootfs.tar.gz ]; then
-            echo "ERROR: Failed to download rootfs"
-            exit 1
-          fi
-          
-          FILE_SIZE=$(stat -c%s opt/download/openwrt-armsr-armv8-generic-rootfs.tar.gz 2>/dev/null || stat -f%z opt/download/openwrt-armsr-armv8-generic-rootfs.tar.gz)
-          echo "Downloaded file size: $FILE_SIZE bytes"
-          
-          if [ "$FILE_SIZE" -lt 10000000 ]; then
-            echo "ERROR: File too small, download may have failed"
-            exit 1
-          fi
-          
-          ls -la opt/download/
-          echo "status=success" >> ${GITHUB_OUTPUT}
-
       - name: Package OpenWrt Firmware for ECB-PR51
         id: package
-        if: steps.download.outputs.status == 'success'
         uses: ophub/flippy-openwrt-actions@main
         env:
-          OPENWRT_ARMSR: opt/download/*rootfs.tar.gz
+          OPENWRT_ARMSR: https://github.com/ophub/amlogic-s9xxx-openwrt/releases/download/OpenWrt_lede_master_save_2026.03/openwrt-armsr-armv8-generic-rootfs.tar.gz
           PACKAGE_SOC: diy
           SCRIPT_REPO_URL: cuihao99090587/openwrt_packit
           SCRIPT_DIY: mk_rk3568_ecb-pr51.sh
