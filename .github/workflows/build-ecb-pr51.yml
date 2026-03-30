@@ -1,7 +1,7 @@
-#==========================================================================
+#==========================================================
 # Description: Build OpenWrt for Lenovo ECB-PR51
 # Custom workflow for RK3568 device
-#==========================================================================
+#==========================================================
 
 name: Build OpenWrt for ECB-PR51
 
@@ -28,14 +28,6 @@ on:
         description: "Set OpenWrt default IP address"
         required: false
         default: "192.168.1.1"
-      rootfs_source:
-        description: "OpenWrt rootfs source repo"
-        required: false
-        default: "ophub/amlogic-s9xxx-openwrt"
-        type: choice
-        options:
-          - ophub/amlogic-s9xxx-openwrt
-          - cuihao99090587/amlogic-s9xxx-openwrt
 
 env:
   TZ: Asia/Shanghai
@@ -97,14 +89,12 @@ jobs:
         working-directory: /builder
         if: ${{ steps.init.outputs.status == 'success' && !cancelled() }}
         run: |
-          # Prepare download directory
           armsr_tarfile_path="opt/download"
           [[ -d "${armsr_tarfile_path}" ]] || mkdir -p ${armsr_tarfile_path}
           sudo rm -rf /opt && sudo ln -sf /builder/opt /opt
           ln -sf /builder/opt ${{ github.workspace }}/opt
 
-          # Download rootfs from specified source
-          ROOTFS_URL="https://github.com/${{ inputs.rootfs_source }}/releases/download/OpenWrt_lede_master_save_2026.03/openwrt-armsr-armv8-generic-rootfs.tar.gz"
+          ROOTFS_URL="https://github.com/ophub/amlogic-s9xxx-openwrt/releases/download/OpenWrt_lede_master_save_2026.03/openwrt-armsr-armv8-generic-rootfs.tar.gz"
           
           echo "Downloading rootfs from: ${ROOTFS_URL}"
           curl -fsSL "${ROOTFS_URL}" -o "${armsr_tarfile_path}/openwrt-armsr-armv8-generic-rootfs.tar.gz"
@@ -125,6 +115,8 @@ jobs:
         env:
           OPENWRT_ARMSR: opt/download/*rootfs.tar.gz
           PACKAGE_SOC: "diy"
+          SCRIPT_REPO_URL: "cuihao99090587/openwrt_packit"
+          SCRIPT_DIY: "mk_rk3568_ecb-pr51.sh"
           KERNEL_REPO_URL: "ophub/kernel"
           KERNEL_VERSION_NAME: ${{ inputs.openwrt_kernel }}
           KERNEL_AUTO_LATEST: ${{ inputs.auto_kernel }}
@@ -156,7 +148,7 @@ jobs:
             - Default password: `password`
             
             ### Install to EMMC
-            - Login to OpenWrt → `System` → `Amlogic Service` → `Install OpenWrt`
+            - Login to OpenWrt -> `System` -> `Amlogic Service` -> `Install OpenWrt`
             
             ### OpenWrt source code
             - [coolsnowwolf/lede](https://github.com/coolsnowwolf/lede)
