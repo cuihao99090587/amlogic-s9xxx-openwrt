@@ -55,7 +55,7 @@ jobs:
           mkdir -p opt/download
           
           # 使用 ophub 提供的预编译 Lean OpenWrt rootfs (稳定可靠)
-          ROOTFS_URL="https://github.com/ophub/amlogic-s9xxx-openwrt/releases/download/OpenWrt_ledes_master_save_2026.03/openwrt-armsr-armv8-generic-rootfs.tar.gz"
+          ROOTFS_URL="https://github.com/ophub/amlogic-s9xxx-openwrt/releases/download/OpenWrt_lede_master_save_2026.03/openwrt-armsr-armv8-generic-rootfs.tar.gz"
           
           echo "Downloading OpenWrt rootfs from: $ROOTFS_URL"
           curl -L --fail -o opt/download/openwrt-armsr-armv8-generic-rootfs.tar.gz "$ROOTFS_URL"
