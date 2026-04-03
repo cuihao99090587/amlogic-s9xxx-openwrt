@@ -8,6 +8,11 @@ name: Build OpenWrt for ECB-PR51
 on:
   repository_dispatch:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/build-ecb-pr51.yml'
 
 env:
   TZ: Asia/Shanghai
@@ -15,7 +20,6 @@ env:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    if: ${{ github.event.repository.owner.id == github.event.sender.id }}
 
     steps:
       - name: Checkout
@@ -62,116 +66,39 @@ jobs:
           WHOAMI: ecb-pr51-builder
 
       - name: Download BRCM WiFi/BT Firmware
-        if: ${{ steps.package.outputs.status == 'success' && !cancelled() }}
+        if: ${{ steps.package.outputs.status == 'success' }}
         run: |
           echo "📥 Downloading BRCM firmware for BCM4356..."
           
-          # Create firmware directory in output path
           FIRMWARE_DIR="${{ env.PACKAGED_OUTPUTPATH }}/firmware-brcm"
           mkdir -p "$FIRMWARE_DIR"
           
-          # Download WiFi firmware from linux-firmware repository
           echo "Downloading WiFi firmware..."
           curl -sL "https://raw.githubusercontent.com/torvalds/linux-firmware/master/brcm/brcmfmac43456-sdio.bin" -o "$FIRMWARE_DIR/brcmfmac43456-sdio.bin"
           curl -sL "https://raw.githubusercontent.com/torvalds/linux-firmware/master/brcm/brcmfmac43456-sdio.clm_blob" -o "$FIRMWARE_DIR/brcmfmac43456-sdio.clm_blob"
           curl -sL "https://raw.githubusercontent.com/torvalds/linux-firmware/master/brcm/brcmfmac43456-sdio.txt" -o "$FIRMWARE_DIR/brcmfmac43456-sdio.txt"
           
-          # Download BT firmware
           echo "Downloading Bluetooth firmware..."
           curl -sL "https://raw.githubusercontent.com/torvalds/linux-firmware/master/brcm/BCM4345C5.hcd" -o "$FIRMWARE_DIR/BCM4345C5.hcd"
           
           echo "✅ Firmware downloaded:"
           ls -lh "$FIRMWARE_DIR"
           
-          # Create installation script
           cat > "$FIRMWARE_DIR/install-firmware.sh" << 'EOF'
 #!/bin/bash
-# BRCM WiFi/BT Firmware Installation Script for OpenWrt
-# For Lenovo ECB-PR51 (BCM4356)
-
 FIRMWARE_DIR="/lib/firmware/brcm"
-BACKUP_DIR="/root/firmware-backup"
-
-echo "=========================================="
-echo "Installing BRCM WiFi/BT Firmware"
-echo "=========================================="
-
-# Create backup directory
-mkdir -p "$BACKUP_DIR"
-
-# Backup existing firmware
-if [ -d "$FIRMWARE_DIR" ] && [ "$(ls -A $FIRMWARE_DIR 2>/dev/null)" ]; then
-    echo "📦 Backing up existing firmware..."
-    cp -r "$FIRMWARE_DIR"/* "$BACKUP_DIR/" 2>/dev/null || true
-fi
-
-# Create firmware directory
 mkdir -p "$FIRMWARE_DIR"
-
-# Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Copy firmware files
-echo "📥 Copying firmware files..."
-cp "$SCRIPT_DIR/brcmfmac43456-sdio.bin" "$FIRMWARE_DIR/"
-cp "$SCRIPT_DIR/brcmfmac43456-sdio.clm_blob" "$FIRMWARE_DIR/"
-cp "$SCRIPT_DIR/brcmfmac43456-sdio.txt" "$FIRMWARE_DIR/"
-cp "$SCRIPT_DIR/BCM4345C5.hcd" "$FIRMWARE_DIR/"
-
-# Set permissions
+cp "$SCRIPT_DIR"/* "$FIRMWARE_DIR/" 2>/dev/null || true
 chmod 644 "$FIRMWARE_DIR"/*
-
-echo "✅ Firmware copied to $FIRMWARE_DIR"
-
-# Load WiFi driver
-echo "📶 Loading WiFi driver..."
 modprobe brcmfmac 2>/dev/null || true
-modprobe brcmutil 2>/dev/null || true
-modprobe cfg80211 2>/dev/null || true
-
-# Load BT driver
-echo "🎧 Loading Bluetooth driver..."
 modprobe btbcm 2>/dev/null || true
-modprobe hci_uart 2>/dev/null || true
-
-sleep 2
-
-# Verify WiFi
-if [ -d /sys/class/net ] && ls /sys/class/net | grep -q "wlan"; then
-    echo "✅ WiFi interface detected"
-else
-    echo "⚠️  WiFi interface not found, trying to reload driver..."
-    modprobe -r brcmfmac 2>/dev/null || true
-    sleep 1
-    modprobe brcmfmac 2>/dev/null || true
-fi
-
-# Verify BT
-if command -v hciconfig &> /dev/null && hciconfig -a 2>/dev/null | grep -q "hci0"; then
-    echo "✅ Bluetooth device detected"
-else
-    echo "⚠️  Bluetooth device not found"
-fi
-
-echo "=========================================="
-echo "✅ Firmware installation complete!"
-echo "=========================================="
-echo ""
-echo "Firmware files installed:"
-ls -lh "$FIRMWARE_DIR"
-echo ""
-echo "To verify WiFi:"
-echo "  iwconfig"
-echo ""
-echo "To verify Bluetooth:"
-echo "  hciconfig -a"
+echo "✅ Firmware installed"
 EOF
-
           chmod +x "$FIRMWARE_DIR/install-firmware.sh"
-          echo "✅ Installation script created"
 
       - name: Upload firmware to Release
-        if: ${{ env.PACKAGED_STATUS == 'success' && !cancelled() }}
+        if: ${{ env.PACKAGED_STATUS == 'success' }}
         uses: ncipollo/release-action@main
         with:
           tag: OpenWrt_ECB-PR51_${{ env.PACKAGED_OUTPUTDATE }}
@@ -199,32 +126,17 @@ EOF
             ### 📦 Firmware Package
             - `*.img.gz` - OpenWrt firmware image
             - `firmware-brcm/` - WiFi/BT firmware files
-              - `brcmfmac43456-sdio.bin` - WiFi main firmware
-              - `brcmfmac43456-sdio.clm_blob` - WiFi calibration data
-              - `brcmfmac43456-sdio.txt` - WiFi configuration
-              - `BCM4345C5.hcd` - Bluetooth firmware
-              - `install-firmware.sh` - Auto-installation script
+            - `install-firmware.sh` - Auto-installation script
             
             ### 🔧 Installation
             1. Write `.img.gz` to eMMC/USB
             2. Boot from eMMC/USB
             3. SSH to OpenWrt (192.168.1.1, root/password)
-            4. Run firmware installation:
-               ```bash
-               cd /root
-               # If firmware-brcm folder exists
-               ./firmware-brcm/install-firmware.sh
-               ```
+            4. Run: `cd /root && ./firmware-brcm/install-firmware.sh`
             
             ### 🌐 Default Settings
             - IP: 192.168.1.1
             - Username: root
             - Password: password
             
-            ### 📝 Notes
-            - WiFi/BT firmware is included in the release but needs manual installation on first boot
-            - Run `install-firmware.sh` after first boot to enable WiFi/BT
-            
             Built with [flippy-openwrt-actions](https://github.com/ophub/flippy-openwrt-actions)
-
-# Auto-triggered build 2026-04-03 17:20:44
