@@ -54,7 +54,7 @@ jobs:
         uses: ophub/flippy-openwrt-actions@main
         env:
           OPENWRT_ARMSR: https://github.com/ophub/amlogic-s9xxx-openwrt/releases/download/OpenWrt_lede_master_save_2026.03/openwrt-armsr-armv8-generic-rootfs.tar.gz
-          PACKAGE_SOC: diy
+          PACKAGE_SOC: rk3568
           SCRIPT_REPO_URL: cuihao99090587/openwrt_packit
           SCRIPT_DIY: mk_rk3568_ecb-pr51.sh
           SCRIPT_DIY_PATH: https://raw.githubusercontent.com/cuihao99090587/openwrt_packit/master/mk_rk3568_ecb-pr51.sh
