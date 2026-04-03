@@ -226,3 +226,5 @@ EOF
             - Run `install-firmware.sh` after first boot to enable WiFi/BT
             
             Built with [flippy-openwrt-actions](https://github.com/ophub/flippy-openwrt-actions)
+
+# Auto-triggered build 2026-04-03 17:20:44
