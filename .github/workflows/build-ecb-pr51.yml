@@ -6,7 +6,6 @@
 name: Build OpenWrt for ECB-PR51
 
 on:
-  repository_dispatch:
   workflow_dispatch:
   push:
     branches:
@@ -66,7 +65,7 @@ jobs:
           WHOAMI: ecb-pr51-builder
 
       - name: Download BRCM WiFi/BT Firmware
-        if: ${{ steps.package.outputs.status == 'success' }}
+        if: ${{ env.PACKAGED_STATUS == 'success' }}
         run: |
           echo "📥 Downloading BRCM firmware for BCM4356..."
           
