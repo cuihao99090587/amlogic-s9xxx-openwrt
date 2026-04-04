@@ -250,3 +250,4 @@ The [u-boot](https://github.com/ophub/u-boot), [kernel](https://github.com/ophub
 ## License
 
 The amlogic-s9xxx-openwrt © OPHUB is licensed under the [GPL-2.0](https://github.com/ophub/amlogic-s9xxx-openwrt/blob/main/LICENSE) license.
+
