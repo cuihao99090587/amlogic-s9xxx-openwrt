@@ -64,37 +64,44 @@ jobs:
           OPENWRT_IP: 192.168.1.1
           WHOAMI: ecb-pr51-builder
 
-      - name: Download BRCM WiFi/BT Firmware
+      - name: Integrate BRCM Firmware into image
         if: ${{ env.PACKAGED_STATUS == 'success' }}
         run: |
-          echo "📥 Downloading BRCM firmware for BCM4356..."
+          echo "📥 Integrating BRCM firmware into system image..."
           
-          FIRMWARE_DIR="${{ env.PACKAGED_OUTPUTPATH }}/firmware-brcm"
-          mkdir -p "$FIRMWARE_DIR"
+          # Download firmware
+          mkdir -p /tmp/brcm
+          curl -sL "https://raw.githubusercontent.com/torvalds/linux-firmware/master/brcm/brcmfmac43456-sdio.bin" -o /tmp/brcm/brcmfmac43456-sdio.bin
+          curl -sL "https://raw.githubusercontent.com/torvalds/linux-firmware/master/brcm/brcmfmac43456-sdio.clm_blob" -o /tmp/brcm/brcmfmac43456-sdio.clm_blob
+          curl -sL "https://raw.githubusercontent.com/torvalds/linux-firmware/master/brcm/brcmfmac43456-sdio.txt" -o /tmp/brcm/brcmfmac43456-sdio.txt
+          curl -sL "https://raw.githubusercontent.com/torvalds/linux-firmware/master/brcm/BCM4345C5.hcd" -o /tmp/brcm/BCM4345C5.hcd
           
-          echo "Downloading WiFi firmware..."
-          curl -sL "https://raw.githubusercontent.com/torvalds/linux-firmware/master/brcm/brcmfmac43456-sdio.bin" -o "$FIRMWARE_DIR/brcmfmac43456-sdio.bin"
-          curl -sL "https://raw.githubusercontent.com/torvalds/linux-firmware/master/brcm/brcmfmac43456-sdio.clm_blob" -o "$FIRMWARE_DIR/brcmfmac43456-sdio.clm_blob"
-          curl -sL "https://raw.githubusercontent.com/torvalds/linux-firmware/master/brcm/brcmfmac43456-sdio.txt" -o "$FIRMWARE_DIR/brcmfmac43456-sdio.txt"
+          # Mount and copy into image
+          IMG_FILE=$(ls ${{ env.PACKAGED_OUTPUTPATH }}/*.img.gz | head -1)
+          gunzip -f "$IMG_FILE"
+          IMG_FILE=$(ls ${{ env.PACKAGED_OUTPUTPATH }}/*.img | head -1)
           
-          echo "Downloading Bluetooth firmware..."
-          curl -sL "https://raw.githubusercontent.com/torvalds/linux-firmware/master/brcm/BCM4345C5.hcd" -o "$FIRMWARE_DIR/BCM4345C5.hcd"
+          LOOP_DEV=$(losetup -f)
+          losetup -P "$LOOP_DEV" "$IMG_FILE"
+          mkdir -p /mnt/openwrt
+          mount "${LOOP_DEV}p2" /mnt/openwrt
           
-          echo "✅ Firmware downloaded:"
-          ls -lh "$FIRMWARE_DIR"
+          # Copy firmware into /lib/firmware/brcm
+          mkdir -p /mnt/openwrt/lib/firmware/brcm
+          cp /tmp/brcm/* /mnt/openwrt/lib/firmware/brcm/
+          chmod 644 /mnt/openwrt/lib/firmware/brcm/*
           
-          cat > "$FIRMWARE_DIR/install-firmware.sh" << 'EOF'
-#!/bin/bash
-FIRMWARE_DIR="/lib/firmware/brcm"
-mkdir -p "$FIRMWARE_DIR"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cp "$SCRIPT_DIR"/* "$FIRMWARE_DIR/" 2>/dev/null || true
-chmod 644 "$FIRMWARE_DIR"/*
-modprobe brcmfmac 2>/dev/null || true
-modprobe btbcm 2>/dev/null || true
-echo "✅ Firmware installed"
-EOF
-          chmod +x "$FIRMWARE_DIR/install-firmware.sh"
+          # Enable WiFi/BT modules
+          echo "brcmfmac" >> /mnt/openwrt/etc/modules
+          echo "btbcm" >> /mnt/openwrt/etc/modules
+          
+          umount /mnt/openwrt
+          losetup -d "$LOOP_DEV"
+          
+          # Recompress
+          gzip -9 "$IMG_FILE"
+          
+          echo "✅ BRCM firmware integrated into system image"
 
       - name: Upload firmware to Release
         if: ${{ env.PACKAGED_STATUS == 'success' }}
@@ -114,26 +121,24 @@ EOF
             
             **Kernel:** Flippy 6.12.y series
             
-            ### ✅ Hardware Support
-            - ✅ Dual Gigabit Ethernet (RGMII)
-            - ✅ SATA 3.0
-            - ✅ WiFi 802.11ac (BCM4356)
-            - ✅ Bluetooth 5.0 (BCM4356)
-            - ✅ HDMI 4K@60fps
-            - ✅ USB 3.0
+            ### 🔧 Hardware Support
+            - 🔌 Dual Gigabit Ethernet (RGMII)
+            - 💾 SATA 3.0
+            - 📶 WiFi 802.11ac (BCM4356) - **Firmware integrated**
+            - 📱 Bluetooth 5.0 (BCM4356) - **Firmware integrated**
+            - 📺 HDMI 4K@60fps
+            - 🔌 USB 3.0
             
-            ### 📦 Firmware Package
-            - `*.img.gz` - OpenWrt firmware image
-            - `firmware-brcm/` - WiFi/BT firmware files
-            - `install-firmware.sh` - Auto-installation script
+            ### 📦 Package Contents
+            - `*.img.gz` - OpenWrt firmware image (BRCM firmware integrated)
             
-            ### 🔧 Installation
+            ### 📥 Installation
             1. Write `.img.gz` to eMMC/USB
             2. Boot from eMMC/USB
             3. SSH to OpenWrt (192.168.1.1, root/password)
-            4. Run: `cd /root && ./firmware-brcm/install-firmware.sh`
+            4. WiFi/BT auto-enabled on boot
             
-            ### 🌐 Default Settings
+            ### ⚙️ Default Settings
             - IP: 192.168.1.1
             - Username: root
             - Password: password
