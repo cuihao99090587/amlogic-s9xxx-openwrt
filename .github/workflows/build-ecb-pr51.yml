@@ -64,10 +64,27 @@ jobs:
           OPENWRT_IP: 192.168.1.1
           WHOAMI: ecb-pr51-builder
 
-      - name: Integrate BRCM Firmware into image
-        if: ${{ env.PACKAGED_STATUS == 'success' }}
+      - name: Check packaging status
+        id: check
         run: |
-          echo "📥 Integrating BRCM firmware into system image..."
+          echo "Packaging status: ${{ steps.package.outputs.packaged_status }}"
+          echo "Output path: ${{ steps.package.outputs.packaged_outputpath }}"
+          echo "Output date: ${{ steps.package.outputs.packaged_outputdate }}"
+          
+          # Export outputs as environment variables for subsequent steps
+          echo "PACKAGED_STATUS=${{ steps.package.outputs.packaged_status }}" >> $GITHUB_ENV
+          echo "PACKAGED_OUTPUTPATH=${{ steps.package.outputs.packaged_outputpath }}" >> $GITHUB_ENV
+          echo "PACKAGED_OUTPUTDATE=${{ steps.package.outputs.packaged_outputdate }}" >> $GITHUB_ENV
+          
+          # List generated files
+          echo ""
+          echo "Generated files:"
+          ls -la "${{ steps.package.outputs.packaged_outputpath }}/" 2>/dev/null || echo "No output path found"
+
+      - name: Integrate BRCM Firmware into image
+        if: ${{ steps.package.outputs.packaged_status == 'success' }}
+        run: |
+          echo "Integrating BRCM firmware into system image..."
           
           # Download firmware
           mkdir -p /tmp/brcm
@@ -76,22 +93,32 @@ jobs:
           curl -sL "https://raw.githubusercontent.com/torvalds/linux-firmware/master/brcm/brcmfmac43456-sdio.txt" -o /tmp/brcm/brcmfmac43456-sdio.txt
           curl -sL "https://raw.githubusercontent.com/torvalds/linux-firmware/master/brcm/BCM4345C5.hcd" -o /tmp/brcm/BCM4345C5.hcd
           
-          # Mount and copy into image
-          IMG_FILE=$(ls ${{ env.PACKAGED_OUTPUTPATH }}/*.img.gz | head -1)
-          gunzip -f "$IMG_FILE"
-          IMG_FILE=$(ls ${{ env.PACKAGED_OUTPUTPATH }}/*.img | head -1)
+          # Find the image file
+          IMG_FILE=$(find "${{ env.PACKAGED_OUTPUTPATH }}" -name "*.img.gz" 2>/dev/null | head -1)
+          if [ -z "$IMG_FILE" ]; then
+            echo "Error: No .img.gz file found in ${{ env.PACKAGED_OUTPUTPATH }}"
+            exit 1
+          fi
           
+          echo "Found image: $IMG_FILE"
+          
+          # Decompress
+          gunzip -f "$IMG_FILE"
+          IMG_FILE="${IMG_FILE%.gz}"
+          echo "Decompressed to: $IMG_FILE"
+          
+          # Mount and copy firmware
           LOOP_DEV=$(losetup -f)
           losetup -P "$LOOP_DEV" "$IMG_FILE"
           mkdir -p /mnt/openwrt
           mount "${LOOP_DEV}p2" /mnt/openwrt
           
-          # Copy firmware into /lib/firmware/brcm
+          # Copy firmware
           mkdir -p /mnt/openwrt/lib/firmware/brcm
           cp /tmp/brcm/* /mnt/openwrt/lib/firmware/brcm/
           chmod 644 /mnt/openwrt/lib/firmware/brcm/*
           
-          # Enable WiFi/BT modules
+          # Enable modules
           echo "brcmfmac" >> /mnt/openwrt/etc/modules
           echo "btbcm" >> /mnt/openwrt/etc/modules
           
@@ -101,14 +128,14 @@ jobs:
           # Recompress
           gzip -9 "$IMG_FILE"
           
-          echo "✅ BRCM firmware integrated into system image"
+          echo "BRCM firmware integrated successfully"
 
       - name: Upload firmware to Release
-        if: ${{ env.PACKAGED_STATUS == 'success' }}
+        if: ${{ steps.package.outputs.packaged_status == 'success' }}
         uses: ncipollo/release-action@main
         with:
-          tag: OpenWrt_ECB-PR51_${{ env.PACKAGED_OUTPUTDATE }}
-          artifacts: ${{ env.PACKAGED_OUTPUTPATH }}/*
+          tag: OpenWrt_ECB-PR51_${{ steps.package.outputs.packaged_outputdate }}
+          artifacts: ${{ steps.package.outputs.packaged_outputpath }}/*
           allowUpdates: true
           removeArtifacts: false
           replacesArtifacts: true
@@ -121,26 +148,26 @@ jobs:
             
             **Kernel:** Flippy 6.12.y series
             
-            ### 🔧 Hardware Support
-            - 🔌 Dual Gigabit Ethernet (RGMII)
-            - 💾 SATA 3.0
-            - 📶 WiFi 802.11ac (BCM4356) - **Firmware integrated**
-            - 📱 Bluetooth 5.0 (BCM4356) - **Firmware integrated**
-            - 📺 HDMI 4K@60fps
-            - 🔌 USB 3.0
+            ### Hardware Support
+            - Dual Gigabit Ethernet (RGMII)
+            - SATA 3.0
+            - WiFi 802.11ac (BCM4356) - Firmware integrated
+            - Bluetooth 5.0 (BCM4356) - Firmware integrated
+            - HDMI 4K@60fps
+            - USB 3.0
             
-            ### 📦 Package Contents
-            - `*.img.gz` - OpenWrt firmware image (BRCM firmware integrated)
+            ### Package Contents
+            - *.img.gz - OpenWrt firmware image (BRCM firmware integrated)
             
-            ### 📥 Installation
-            1. Write `.img.gz` to eMMC/USB
+            ### Installation
+            1. Write .img.gz to eMMC/USB
             2. Boot from eMMC/USB
             3. SSH to OpenWrt (192.168.1.1, root/password)
             4. WiFi/BT auto-enabled on boot
             
-            ### ⚙️ Default Settings
+            ### Default Settings
             - IP: 192.168.1.1
             - Username: root
             - Password: password
             
-            Built with [flippy-openwrt-actions](https://github.com/ophub/flippy-openwrt-actions)
+            Built with flippy-openwrt-actions
