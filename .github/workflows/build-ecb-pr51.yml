@@ -65,24 +65,20 @@ jobs:
           WHOAMI: ecb-pr51-builder
 
       - name: Check packaging status
-        id: check
         run: |
-          echo "Packaging status: ${{ steps.package.outputs.packaged_status }}"
-          echo "Output path: ${{ steps.package.outputs.packaged_outputpath }}"
-          echo "Output date: ${{ steps.package.outputs.packaged_outputdate }}"
+          echo "=== Packaging Status Check ==="
+          echo "PACKAGED_STATUS=${PACKAGED_STATUS:-NOT_SET}"
+          echo "PACKAGED_OUTPUTPATH=${PACKAGED_OUTPUTPATH:-NOT_SET}"
+          echo "PACKAGED_OUTPUTDATE=${PACKAGED_OUTPUTDATE:-NOT_SET}"
           
-          # Export outputs as environment variables for subsequent steps
-          echo "PACKAGED_STATUS=${{ steps.package.outputs.packaged_status }}" >> $GITHUB_ENV
-          echo "PACKAGED_OUTPUTPATH=${{ steps.package.outputs.packaged_outputpath }}" >> $GITHUB_ENV
-          echo "PACKAGED_OUTPUTDATE=${{ steps.package.outputs.packaged_outputdate }}" >> $GITHUB_ENV
-          
-          # List generated files
-          echo ""
-          echo "Generated files:"
-          ls -la "${{ steps.package.outputs.packaged_outputpath }}/" 2>/dev/null || echo "No output path found"
+          if [ -n "${PACKAGED_OUTPUTPATH}" ] && [ -d "${PACKAGED_OUTPUTPATH}" ]; then
+            echo ""
+            echo "=== Generated Files ==="
+            ls -la "${PACKAGED_OUTPUTPATH}/"
+          fi
 
       - name: Integrate BRCM Firmware into image
-        if: ${{ steps.package.outputs.packaged_status == 'success' }}
+        if: ${{ env.PACKAGED_STATUS == 'success' }}
         run: |
           echo "Integrating BRCM firmware into system image..."
           
@@ -94,9 +90,10 @@ jobs:
           curl -sL "https://raw.githubusercontent.com/torvalds/linux-firmware/master/brcm/BCM4345C5.hcd" -o /tmp/brcm/BCM4345C5.hcd
           
           # Find the image file
-          IMG_FILE=$(find "${{ env.PACKAGED_OUTPUTPATH }}" -name "*.img.gz" 2>/dev/null | head -1)
+          IMG_FILE=$(find "${PACKAGED_OUTPUTPATH}" -name "*.img.gz" 2>/dev/null | head -1)
           if [ -z "$IMG_FILE" ]; then
-            echo "Error: No .img.gz file found in ${{ env.PACKAGED_OUTPUTPATH }}"
+            echo "Error: No .img.gz file found in ${PACKAGED_OUTPUTPATH}"
+            ls -la "${PACKAGED_OUTPUTPATH}/" 2>/dev/null || echo "Directory does not exist"
             exit 1
           fi
           
@@ -131,11 +128,11 @@ jobs:
           echo "BRCM firmware integrated successfully"
 
       - name: Upload firmware to Release
-        if: ${{ steps.package.outputs.packaged_status == 'success' }}
+        if: ${{ env.PACKAGED_STATUS == 'success' }}
         uses: ncipollo/release-action@main
         with:
-          tag: OpenWrt_ECB-PR51_${{ steps.package.outputs.packaged_outputdate }}
-          artifacts: ${{ steps.package.outputs.packaged_outputpath }}/*
+          tag: OpenWrt_ECB-PR51_${{ env.PACKAGED_OUTPUTDATE }}
+          artifacts: ${{ env.PACKAGED_OUTPUTPATH }}/*
           allowUpdates: true
           removeArtifacts: false
           replacesArtifacts: true
